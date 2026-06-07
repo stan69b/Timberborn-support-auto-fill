@@ -589,14 +589,18 @@ namespace PlatformAutofill
 
         private int GetGapBottom(int x, int y, int terrainTop, int placedBottomZ, bool includePreviews)
         {
-            // World objects below the dragged block are not treated as automatic
-            // support bases anymore. We let support validation decide whether a
-            // generated support can rest on, share space with, or must pass
-            // through them. Only already-planned previews act as known bases here.
+            // Existing world objects are treated as hard blockers/bases so we
+            // never auto-inject supports through an occupied cell and end up
+            // creating a structure that becomes invalid on reload.
             return PlatformAutofillRules.FindGapBottom(
                 terrainTop,
                 placedBottomZ,
-                z => includePreviews && _previewBlockService.GetPreviewsAt(new Vector3Int(x, y, z)).Any());
+                z =>
+                {
+                    Vector3Int coordinates = new Vector3Int(x, y, z);
+                    return _blockService.AnyObjectAt(coordinates)
+                        || (includePreviews && _previewBlockService.GetPreviewsAt(coordinates).Any());
+                });
         }
 
         private string BuildValidationSummary(string templateName, Placement placement)

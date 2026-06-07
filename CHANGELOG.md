@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-06-07
+
+- Fixed an autofill bug where supports could be planned through already occupied cells below the dragged structure.
+- Prevented auto-generated supports from being injected under existing structures such as water flow regulators, which could cause invalid placements after reload.
+
 ## [1.0.3] - 2026-06-07
 
 - Fixed a startup issue caused by local test binaries being picked up as mod assemblies.
