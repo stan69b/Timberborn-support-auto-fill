@@ -154,7 +154,7 @@ namespace PlatformAutofill
             }
         }
 
-        public void SetMaxSupport(int index) => MaxSupportIndex = index;
+        public void SetMaxSupport(int index) => MaxSupportIndex = PlatformAutofillRules.ClampSupportIndex(index);
 
         public bool SupportsAutofill(PlaceableBlockObjectSpec? template)
         {
@@ -579,16 +579,10 @@ namespace PlatformAutofill
 
         private int GetGapBottom(int x, int y, int terrainTop, int placedBottomZ, bool includePreviews)
         {
-            for (int z = placedBottomZ - 1; z >= terrainTop; z--)
-            {
-                var coordinates = new Vector3Int(x, y, z);
-                if (HasExistingSupportBaseAt(coordinates, includePreviews))
-                {
-                    return z + 1;
-                }
-            }
-
-            return terrainTop;
+            return PlatformAutofillRules.FindGapBottom(
+                terrainTop,
+                placedBottomZ,
+                z => HasExistingSupportBaseAt(new Vector3Int(x, y, z), includePreviews));
         }
 
         private bool HasExistingSupportBaseAt(Vector3Int coordinates, bool includePreviews)

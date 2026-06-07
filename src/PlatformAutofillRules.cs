@@ -8,6 +8,11 @@ namespace PlatformAutofill
     {
         internal static readonly string[] SupportTemplatePrefixes = { "Platform", "DoublePlatform", "TriplePlatform" };
 
+        internal static int ClampSupportIndex(int supportIndex)
+        {
+            return Math.Max(0, Math.Min(supportIndex, SupportTemplatePrefixes.Length - 1));
+        }
+
         internal static bool TryExtractFaction(string templateName, out string? faction)
         {
             int dot = templateName.LastIndexOf('.');
@@ -28,11 +33,24 @@ namespace PlatformAutofill
                 yield break;
             }
 
-            int clampedMaxIndex = Math.Max(0, Math.Min(maxSupportIndex, SupportTemplatePrefixes.Length - 1));
+            int clampedMaxIndex = ClampSupportIndex(maxSupportIndex);
             for (int sizeIdx = clampedMaxIndex; sizeIdx >= 0; sizeIdx--)
             {
                 yield return $"{SupportTemplatePrefixes[sizeIdx]}.{faction}";
             }
+        }
+
+        internal static int FindGapBottom(int terrainTop, int placedBottomZ, Func<int, bool> hasExistingSupportBaseAt)
+        {
+            for (int z = placedBottomZ - 1; z >= terrainTop; z--)
+            {
+                if (hasExistingSupportBaseAt(z))
+                {
+                    return z + 1;
+                }
+            }
+
+            return terrainTop;
         }
 
         internal static IEnumerable<T> OrderSupportPlacements<T>(
