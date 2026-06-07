@@ -5,7 +5,7 @@ cmd = d.get("tool_input", {}).get("command", "")
 if "dotnet build" not in cmd:
     sys.exit(0)
 
-manifest = "/Users/stan/Documents/Timberborn/Mods/Platform Autofill GPT/manifest.json"
+manifest = "/Users/stan/Documents/Timberborn/Mods/Platform Autofill/manifest.json"
 with open(manifest) as f:
     m = json.load(f)
 
