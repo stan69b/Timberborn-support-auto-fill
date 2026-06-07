@@ -13,6 +13,16 @@ namespace PlatformAutofill
             return Math.Max(0, Math.Min(supportIndex, SupportTemplatePrefixes.Length - 1));
         }
 
+        internal static bool IsSupportTemplateName(string templateName)
+        {
+            if (string.IsNullOrEmpty(templateName))
+            {
+                return false;
+            }
+
+            return SupportTemplatePrefixes.Any(prefix => templateName.StartsWith(prefix + ".", StringComparison.Ordinal));
+        }
+
         internal static bool TryExtractFaction(string templateName, out string? faction)
         {
             int dot = templateName.LastIndexOf('.');
@@ -70,6 +80,7 @@ namespace PlatformAutofill
             int desiredTopZ,
             int supportSizeZ,
             Func<int, OccupiedZRange?> occupiedZRangeResolver,
+            Func<int, bool> candidateValidator,
             out SupportPlacementSelection selection,
             out string searchSummary)
         {
@@ -104,6 +115,11 @@ namespace PlatformAutofill
                     continue;
                 }
 
+                if (!candidateValidator(candidateZ))
+                {
+                    continue;
+                }
+
                 if (!found || minZ < bestBottomZ)
                 {
                     bestCandidateZ = candidateZ;
@@ -124,6 +140,24 @@ namespace PlatformAutofill
 
             selection = new SupportPlacementSelection(bestCandidateZ, bestBottomZ, bestTopZ);
             return true;
+        }
+
+        internal static bool TrySelectSupportPlacement(
+            int gapBottomZ,
+            int desiredTopZ,
+            int supportSizeZ,
+            Func<int, OccupiedZRange?> occupiedZRangeResolver,
+            out SupportPlacementSelection selection,
+            out string searchSummary)
+        {
+            return TrySelectSupportPlacement(
+                gapBottomZ,
+                desiredTopZ,
+                supportSizeZ,
+                occupiedZRangeResolver,
+                _ => true,
+                out selection,
+                out searchSummary);
         }
 
         internal readonly struct OccupiedZRange

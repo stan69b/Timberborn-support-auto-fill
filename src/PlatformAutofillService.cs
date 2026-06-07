@@ -167,6 +167,11 @@ namespace PlatformAutofill
             if (blockObject.IsFinished) return false;
 
             string templateName = _nameRetriever.GetTemplateName(blockObject);
+            if (PlatformAutofillRules.IsSupportTemplateName(templateName))
+            {
+                return false;
+            }
+
             if (!SupportsAutofill(templateName))
             {
                 return false;
@@ -402,6 +407,7 @@ namespace PlatformAutofill
                     }
 
                     if (!TryCreateSupportPlacement(
+                            supportName,
                             supportSpec,
                             coords.x,
                             coords.y,
@@ -517,7 +523,8 @@ namespace PlatformAutofill
             return false;
         }
 
-        private static bool TryCreateSupportPlacement(
+        private bool TryCreateSupportPlacement(
+            string supportName,
             BlockObjectSpec supportSpec,
             int x,
             int y,
@@ -541,6 +548,9 @@ namespace PlatformAutofill
                         ? new PlatformAutofillRules.OccupiedZRange(minZ, maxZ)
                         : null;
                 },
+                candidateZ => IsSupportPlacementValid(
+                    supportName,
+                    new Placement(new Vector3Int(x, y, candidateZ), orientation, flipMode)),
                 out PlatformAutofillRules.SupportPlacementSelection selection,
                 out searchSummary);
 
@@ -579,52 +589,21 @@ namespace PlatformAutofill
 
         private int GetGapBottom(int x, int y, int terrainTop, int placedBottomZ, bool includePreviews)
         {
+            // World objects below the dragged block are not treated as automatic
+            // support bases anymore. We let support validation decide whether a
+            // generated support can rest on, share space with, or must pass
+            // through them. Only already-planned previews act as known bases here.
             return PlatformAutofillRules.FindGapBottom(
                 terrainTop,
                 placedBottomZ,
-                z => HasExistingSupportBaseAt(new Vector3Int(x, y, z), includePreviews));
-        }
-
-        private bool HasExistingSupportBaseAt(Vector3Int coordinates, bool includePreviews)
-        {
-            if (_blockService.AnyObjectAt(coordinates))
-            {
-                return true;
-            }
-
-            return includePreviews && _previewBlockService.GetPreviewsAt(coordinates).Any();
+                z => includePreviews && _previewBlockService.GetPreviewsAt(new Vector3Int(x, y, z)).Any());
         }
 
         private string BuildValidationSummary(string templateName, Placement placement)
         {
-            if (!TryGetSupportPlaceableSpec(templateName, out PlaceableBlockObjectSpec? placeableSpec)
-                || placeableSpec == null)
-            {
-                return "no-placeable-spec";
-            }
-
-            Preview? preview = null;
-            try
-            {
-                preview = _previewFactory.Create(placeableSpec);
-                preview.Reposition(placement);
-
-                var previews = new List<BaseComponent> { preview };
-                bool isValid = _validationService.AreValid(previews, out string errorMessage);
-                return $"isValid={isValid} error='{errorMessage}'";
-            }
-            catch (System.Exception ex)
-            {
-                return $"validation-exception={ex.GetType().Name}:{ex.Message}";
-            }
-            finally
-            {
-                if (preview != null)
-                {
-                    preview.Hide();
-                    preview.RemoveFromPreviewServices();
-                }
-            }
+            return TryValidateSupportPlacement(templateName, placement, out bool isValid, out string errorMessage)
+                ? $"isValid={isValid} error='{errorMessage}'"
+                : "no-placeable-spec";
         }
 
         private static string FormatBlocks(BlockObjectSpec blockSpec, Placement placement)
@@ -634,6 +613,52 @@ namespace PlatformAutofill
                 .ToList();
 
             return "[" + string.Join(", ", blocks) + "]";
+        }
+
+        private bool IsSupportPlacementValid(string templateName, Placement placement)
+        {
+            return TryValidateSupportPlacement(templateName, placement, out bool isValid, out _)
+                && isValid;
+        }
+
+        private bool TryValidateSupportPlacement(
+            string templateName,
+            Placement placement,
+            out bool isValid,
+            out string errorMessage)
+        {
+            isValid = false;
+            errorMessage = "no-placeable-spec";
+
+            if (!TryGetSupportPlaceableSpec(templateName, out PlaceableBlockObjectSpec? placeableSpec)
+                || placeableSpec == null)
+            {
+                return false;
+            }
+
+            Preview? preview = null;
+            try
+            {
+                preview = _previewFactory.Create(placeableSpec);
+                preview.Reposition(placement);
+
+                var previews = new List<BaseComponent> { preview };
+                isValid = _validationService.AreValid(previews, out errorMessage);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"validation-exception={ex.GetType().Name}:{ex.Message}";
+                return true;
+            }
+            finally
+            {
+                if (preview != null)
+                {
+                    preview.Hide();
+                    preview.RemoveFromPreviewServices();
+                }
+            }
         }
 
         private static int GetSupportBottomZ(PendingSupportPlacement pendingSupport)
