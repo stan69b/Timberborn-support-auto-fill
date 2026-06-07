@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-06-07
+
+- Fixed a startup issue caused by local test binaries being picked up as mod assemblies.
+- Improved support planning so existing world objects are validated as potential support bases instead of always truncating the stack.
+- Added regression tests for support-template detection and validator-driven support placement selection.
+
 ## [1.0.2] - 2026-06-07
 
 - Added a lightweight automated test runner under `src/tests`.

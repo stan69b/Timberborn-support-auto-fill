@@ -17,6 +17,17 @@ namespace PlatformAutofill.Tests
             Assert.Equal(expectedIndex, PlatformAutofillRules.ClampSupportIndex(requestedIndex));
         }
 
+        [Theory]
+        [InlineData("Platform.Folktails", true)]
+        [InlineData("DoublePlatform.IronTeeth", true)]
+        [InlineData("TriplePlatform.CustomFaction", true)]
+        [InlineData("Path.Folktails", false)]
+        [InlineData("", false)]
+        public void IsSupportTemplateName_DetectsOnlySupportTemplates(string templateName, bool expected)
+        {
+            Assert.Equal(expected, PlatformAutofillRules.IsSupportTemplateName(templateName));
+        }
+
         [Fact]
         public void TryExtractFaction_ReturnsFactionSuffix()
         {
@@ -239,6 +250,29 @@ namespace PlatformAutofill.Tests
 
             Assert.False(success);
             Assert.Contains("sizeZ=3", summary);
+        }
+
+        [Fact]
+        public void TrySelectSupportPlacement_SkipsCandidatesRejectedByValidator()
+        {
+            Dictionary<int, PlatformAutofillRules.OccupiedZRange> ranges = new Dictionary<int, PlatformAutofillRules.OccupiedZRange>
+            {
+                [2] = new PlatformAutofillRules.OccupiedZRange(2, 6),
+                [4] = new PlatformAutofillRules.OccupiedZRange(4, 6),
+            };
+
+            bool success = PlatformAutofillRules.TrySelectSupportPlacement(
+                gapBottomZ: 2,
+                desiredTopZ: 6,
+                supportSizeZ: 3,
+                candidateZ => ranges.TryGetValue(candidateZ, out PlatformAutofillRules.OccupiedZRange range) ? range : null,
+                candidateZ => candidateZ != 2,
+                out PlatformAutofillRules.SupportPlacementSelection selection,
+                out _);
+
+            Assert.True(success);
+            Assert.Equal(4, selection.CandidateZ);
+            Assert.Equal(4, selection.BottomZ);
         }
 
         [Fact]
