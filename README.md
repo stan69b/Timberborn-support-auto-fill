@@ -36,5 +36,4 @@ Place the `Platform Autofill` folder (containing `manifest.json` and `PlatformAu
 ## Known limitations
 
 - The autofill only triggers during drag-placement. Single-click placements are not affected.
-- Supports are placed for the faction active at the time of placement. Switching factions mid-drag is not supported.
 - Placement validation bypass is limited to blocks that are almost-valid (e.g. floating in air above terrain); blocks that overlap existing structures are still rejected.

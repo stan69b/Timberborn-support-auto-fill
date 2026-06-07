@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"/Users/stan/Documents/Timberborn/Mods/Platform Autofill GPT/.claude/bump-version.py\""
+            "command": "python3 \"/Users/stan/Documents/Timberborn/Mods/Platform Autofill/.claude/bump-version.py\""
           }
         ]
       }

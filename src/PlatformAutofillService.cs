@@ -22,6 +22,7 @@ namespace PlatformAutofill
     {
         private static readonly bool DiagnosticLogging = true;
         private static readonly string[] SupportTemplatePrefixes = { "Platform", "DoublePlatform", "TriplePlatform" };
+        private static readonly Action<BaseComponent> NoOpPlacedCallback = _ => { };
 
         public int MaxSupportIndex { get; private set; } = 2;
         public bool IsEnabled { get; private set; } = false;
@@ -39,7 +40,6 @@ namespace PlatformAutofill
         private Vector3Int _lastPlacedCoord = new Vector3Int(int.MinValue, int.MinValue, int.MinValue);
         private bool _placeableSpecsLoaded;
         private IBlockService _blockService = null!;
-        private BlockObjectFactory _blockObjectFactory = null!;
         private FactionService _factionService = null!;
         private ITerrainService _terrainService = null!;
         private BlockObjectPlacerService _placerService = null!;
@@ -54,7 +54,6 @@ namespace PlatformAutofill
         [Inject]
         public void InjectDependencies(
             IBlockService blockService,
-            BlockObjectFactory blockObjectFactory,
             FactionService factionService,
             ITerrainService terrainService,
             BlockObjectPlacerService placerService,
@@ -67,7 +66,6 @@ namespace PlatformAutofill
             TemplateNameRetriever nameRetriever)
         {
             _blockService = blockService;
-            _blockObjectFactory = blockObjectFactory;
             _factionService = factionService;
             _terrainService = terrainService;
             _placerService  = placerService;
@@ -107,19 +105,13 @@ namespace PlatformAutofill
                     try
                     {
                         IBlockObjectPlacer supportPlacer = _placerService.GetMatchingPlacer(pendingSupport.SupportSpec);
-                        supportPlacer.Place(pendingSupport.SupportSpec, pendingSupport.Placement, null!);
+                        supportPlacer.Place(pendingSupport.SupportSpec, pendingSupport.Placement, NoOpPlacedCallback);
                         LogDiagnostic($"support '{pendingSupport.SupportName}' placed at {pendingSupport.Placement.Coordinates}");
                     }
                     catch (System.Exception ex)
                     {
                         Debug.LogError(
                             $"[PlatformAutofill] support placement failed for '{pendingSupport.SupportName}' at {pendingSupport.Placement.Coordinates}: {ex}");
-
-                        if (TryPlaceFinishedSupport(pendingSupport))
-                        {
-                            LogDiagnostic(
-                                $"support '{pendingSupport.SupportName}' finished-placement fallback succeeded at {pendingSupport.Placement.Coordinates}");
-                        }
                     }
                 }
             }
@@ -157,8 +149,20 @@ namespace PlatformAutofill
             if (blockObject.IsFinished) return false;
 
             string templateName = _nameRetriever.GetTemplateName(blockObject);
-            return SupportsAutofill(templateName)
-                && (blockObject.IsAlmostValid() || IsPathTemplate(templateName));
+            if (!SupportsAutofill(templateName))
+            {
+                return false;
+            }
+
+            if (!blockObject.IsAlmostValid() && !IsPathTemplate(templateName))
+            {
+                return false;
+            }
+
+            // Validate the dragged top block against the world state, not against
+            // the support previews we inject afterwards, otherwise the original
+            // preview can disappear on the next refresh.
+            return CanResolveSupportsForPlacement(templateName, blockObject.Placement);
         }
 
         public bool CanBypassPlacementValidation(BaseComponent component)
@@ -177,7 +181,12 @@ namespace PlatformAutofill
 
             foreach (BaseComponent component in components)
             {
-                if (!CanBypassPlacementValidation(component))
+                if (!TryGetBlockObject(component, out BlockObject? blockObject) || blockObject == null)
+                {
+                    return false;
+                }
+
+                if (!_validationService.IsValid(blockObject))
                 {
                     return false;
                 }
@@ -217,6 +226,7 @@ namespace PlatformAutofill
                     target.Faction,
                     target.RuntimeSpec,
                     placement,
+                    includePreviews: true,
                     previewPlacements,
                     previewCoords);
             }
@@ -312,16 +322,26 @@ namespace PlatformAutofill
             if (!IsEnabled || IsPlacingSupports) return;
             if (!TryResolveAutofillTarget(name, out string? faction) || faction == null) return;
 
-            QueueSupports(name, faction, blockSpec, placement);
+            TryQueueSupports(name, faction, blockSpec, placement);
         }
 
-        private void QueueSupports(
+        private bool TryQueueSupports(
             string name,
             string faction,
             BlockObjectSpec blockSpec,
             Placement placement)
         {
-            AppendSupportPlacements(name, faction, blockSpec, placement, _pendingSupportPlacements, _pendingSupportCoords);
+            try
+            {
+                AppendSupportPlacements(name, faction, blockSpec, placement, includePreviews: false, _pendingSupportPlacements, _pendingSupportCoords);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    $"[PlatformAutofill] support queueing failed for '{name}' at {placement.Coordinates}: {ex}");
+                return false;
+            }
         }
 
         private void AppendSupportPlacements(
@@ -329,6 +349,7 @@ namespace PlatformAutofill
             string faction,
             BlockObjectSpec blockSpec,
             Placement placement,
+            bool includePreviews,
             ICollection<PendingSupportPlacement> supportPlacements,
             ISet<Vector3Int> knownSupportCoords)
         {
@@ -340,7 +361,7 @@ namespace PlatformAutofill
                 placedTopZ = coords.z;
             }
 
-            int gapBottom = GetGapBottom(coords.x, coords.y, terrainTop, placedBottomZ, includePreviews: supportPlacements != _pendingSupportPlacements);
+            int gapBottom = GetGapBottom(coords.x, coords.y, terrainTop, placedBottomZ, includePreviews);
             int gapTop = placedBottomZ - 1;
             LogDiagnostic(
                 $"place '{name}' at {coords} placementZ={placement.Coordinates.z} occupiedZ={placedBottomZ}..{placedTopZ} " +
@@ -630,21 +651,6 @@ namespace PlatformAutofill
             return "[" + string.Join(", ", blocks) + "]";
         }
 
-        private bool TryPlaceFinishedSupport(PendingSupportPlacement pendingSupport)
-        {
-            try
-            {
-                _blockObjectFactory.CreateFinished(pendingSupport.SupportSpec, pendingSupport.Placement);
-                return true;
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError(
-                    $"[PlatformAutofill] support finished-placement fallback failed for '{pendingSupport.SupportName}' at {pendingSupport.Placement.Coordinates}: {ex}");
-                return false;
-            }
-        }
-
         private readonly struct PendingSupportPlacement
         {
             public PendingSupportPlacement(string supportName, BlockObjectSpec supportSpec, Placement placement)
@@ -797,6 +803,41 @@ namespace PlatformAutofill
 
             target = new AutofillTarget(resolvedTemplateName, resolvedFaction, runtimeSpec);
             return true;
+        }
+
+        private bool CanResolveSupportsForPlacement(string templateName, Placement placement)
+        {
+            if (!TryResolveAutofillTarget(templateName, out string? faction) || string.IsNullOrEmpty(faction))
+            {
+                return false;
+            }
+
+            if (!TryGetSupportSpec(templateName, out BlockObjectSpec? runtimeSpec) || runtimeSpec == null)
+            {
+                return false;
+            }
+
+            string resolvedFaction = faction!;
+            try
+            {
+                List<PendingSupportPlacement> supportPlacements = new();
+                HashSet<Vector3Int> knownSupportCoords = new();
+                AppendSupportPlacements(
+                    templateName,
+                    resolvedFaction,
+                    runtimeSpec,
+                    placement,
+                    includePreviews: false,
+                    supportPlacements,
+                    knownSupportCoords);
+                return supportPlacements.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    $"[PlatformAutofill] support dry-run failed for '{templateName}' at {placement.Coordinates}: {ex}");
+                return false;
+            }
         }
 
         private static bool IsDragLayout(BlockObjectLayout layout)

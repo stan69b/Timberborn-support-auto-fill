@@ -182,7 +182,9 @@ namespace PlatformAutofill
             placedCallback = component =>
             {
                 original?.Invoke(component);
-                service.OnBlockPlaced(component, capturedPlacement, capturedTemplate);
+                TryRun(
+                    "placedCallback",
+                    () => service.OnBlockPlaced(component, capturedPlacement, capturedTemplate));
             };
         }
     }
