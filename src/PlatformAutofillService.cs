@@ -23,7 +23,6 @@ namespace PlatformAutofill
     public class PlatformAutofillService : ILoadableSingleton, IUpdatableSingleton
     {
         private static readonly bool DiagnosticLogging = true;
-        private static readonly string[] SupportTemplatePrefixes = { "Platform", "DoublePlatform", "TriplePlatform" };
         private static readonly MethodInfo? AddAccessesAboveGroundMethod =
             typeof(HighBlockObjectAccessesAdder).GetMethod(
                 "AddAccessesAboveGround",
@@ -106,10 +105,11 @@ namespace PlatformAutofill
             IsPlacingSupports = true;
             try
             {
-                foreach (PendingSupportPlacement pendingSupport in _pendingSupportPlacements
-                             .OrderBy(GetSupportBottomZ)
-                             .ThenBy(pendingSupport => pendingSupport.Placement.Coordinates.x)
-                             .ThenBy(pendingSupport => pendingSupport.Placement.Coordinates.y))
+                foreach (PendingSupportPlacement pendingSupport in PlatformAutofillRules.OrderSupportPlacements(
+                             _pendingSupportPlacements,
+                             GetSupportBottomZ,
+                             pendingSupport => pendingSupport.Placement.Coordinates.x,
+                             pendingSupport => pendingSupport.Placement.Coordinates.y))
                 {
                     string supportBlocks = FormatBlocks(pendingSupport.SupportSpec, pendingSupport.Placement);
                     string validationSummary = BuildValidationSummary(pendingSupport.SupportName, pendingSupport.Placement);
@@ -391,9 +391,8 @@ namespace PlatformAutofill
             while (currentTopZ >= gapBottom)
             {
                 bool placed = false;
-                for (int sizeIdx = MaxSupportIndex; sizeIdx >= 0; sizeIdx--)
+                foreach (string supportName in PlatformAutofillRules.EnumerateSupportTemplateNames(MaxSupportIndex, faction))
                 {
-                    string supportName = $"{SupportTemplatePrefixes[sizeIdx]}.{faction}";
                     if (!TryGetSupportSpec(supportName, out BlockObjectSpec? supportSpec)
                         || supportSpec == null)
                     {
@@ -442,14 +441,6 @@ namespace PlatformAutofill
         // -----------------------------------------------------------------------
         // Helpers
         // -----------------------------------------------------------------------
-
-        private static bool TryExtractFaction(string templateName, out string? faction)
-        {
-            int dot = templateName.LastIndexOf('.');
-            if (dot < 0 || dot >= templateName.Length - 1) { faction = null; return false; }
-            faction = templateName.Substring(dot + 1);
-            return true;
-        }
 
         private bool SupportsAutofill(string templateName)
         {
@@ -539,50 +530,32 @@ namespace PlatformAutofill
             out int supportTopZ,
             out string searchSummary)
         {
-            int searchMinZ = gapBottomZ - supportSpec.Size.z - 2;
-            int searchMaxZ = desiredTopZ + supportSpec.Size.z + 2;
-            int bestBottomZ = int.MinValue;
-            int bestTopZ = int.MinValue;
-            Placement bestPlacement = default;
-            bool found = false;
-            List<string> candidateSummaries = new();
+            bool found = PlatformAutofillRules.TrySelectSupportPlacement(
+                gapBottomZ,
+                desiredTopZ,
+                supportSpec.Size.z,
+                candidateZ =>
+                {
+                    Placement candidatePlacement = new Placement(new Vector3Int(x, y, candidateZ), orientation, flipMode);
+                    return TryGetOccupiedZRange(supportSpec, candidatePlacement, out int minZ, out int maxZ)
+                        ? new PlatformAutofillRules.OccupiedZRange(minZ, maxZ)
+                        : null;
+                },
+                out PlatformAutofillRules.SupportPlacementSelection selection,
+                out searchSummary);
 
-            for (int candidateZ = searchMinZ; candidateZ <= searchMaxZ; candidateZ++)
+            if (!found)
             {
-                var candidatePlacement = new Placement(new Vector3Int(x, y, candidateZ), orientation, flipMode);
-                if (!TryGetOccupiedZRange(supportSpec, candidatePlacement, out int minZ, out int maxZ))
-                {
-                    continue;
-                }
-
-                bool reachesTop = maxZ == desiredTopZ;
-                bool staysAboveFloor = minZ >= gapBottomZ;
-                candidateSummaries.Add(
-                    $"{candidateZ}->{minZ}..{maxZ}" +
-                    (reachesTop ? " top" : "") +
-                    (staysAboveFloor ? " floor" : "") +
-                    (reachesTop && staysAboveFloor ? " fit" : ""));
-
-                if (maxZ != desiredTopZ || minZ < gapBottomZ)
-                {
-                    continue;
-                }
-
-                if (!found || minZ < bestBottomZ)
-                {
-                    bestPlacement = candidatePlacement;
-                    bestBottomZ = minZ;
-                    bestTopZ = maxZ;
-                    found = true;
-                }
+                placement = default;
+                supportBottomZ = int.MinValue;
+                supportTopZ = int.MinValue;
+                return false;
             }
 
-            searchSummary =
-                $"sizeZ={supportSpec.Size.z} search={searchMinZ}..{searchMaxZ} candidates=[{string.Join(", ", candidateSummaries)}]";
-            placement = bestPlacement;
-            supportBottomZ = bestBottomZ;
-            supportTopZ = bestTopZ;
-            return found;
+            placement = new Placement(new Vector3Int(x, y, selection.CandidateZ), orientation, flipMode);
+            supportBottomZ = selection.BottomZ;
+            supportTopZ = selection.TopZ;
+            return true;
         }
 
         private static bool TryGetOccupiedZRange(
@@ -902,7 +875,7 @@ namespace PlatformAutofill
 
         private bool TryResolveFaction(string templateName, out string? faction)
         {
-            if (TryExtractFaction(templateName, out faction) && !string.IsNullOrEmpty(faction))
+            if (PlatformAutofillRules.TryExtractFaction(templateName, out faction) && !string.IsNullOrEmpty(faction))
             {
                 return true;
             }
@@ -913,7 +886,7 @@ namespace PlatformAutofill
 
         private bool HasSupportTemplateForFaction(string faction)
         {
-            foreach (string prefix in SupportTemplatePrefixes)
+            foreach (string prefix in PlatformAutofillRules.SupportTemplatePrefixes)
             {
                 if (TryGetSupportSpec($"{prefix}.{faction}", out BlockObjectSpec? supportSpec) && supportSpec != null)
                 {

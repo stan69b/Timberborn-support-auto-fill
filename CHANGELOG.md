@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-06-07
+
+- Added a lightweight automated test runner under `src/tests`.
+- Added regression coverage for faction parsing, support template ordering, support placement selection, and bottom-up support ordering rules.
+
 ## [1.0.0] - 2026-06-07
 
 Version 1 establishes the core Platform Autofill feature set:

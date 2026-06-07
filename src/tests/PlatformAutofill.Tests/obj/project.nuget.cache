@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "EnDSqIF1KUA=",
+  "success": true,
+  "projectFilePath": "/Users/stan/Documents/Timberborn/Mods/Platform Autofill/src/tests/PlatformAutofill.Tests/PlatformAutofill.Tests.csproj",
+  "expectedPackageFiles": [
+    "/Users/stan/.nuget/packages/microsoft.netcore.app.ref/8.0.27/microsoft.netcore.app.ref.8.0.27.nupkg.sha512",
+    "/Users/stan/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.27/microsoft.aspnetcore.app.ref.8.0.27.nupkg.sha512",
+    "/Users/stan/.nuget/packages/microsoft.netcore.app.host.osx-arm64/8.0.27/microsoft.netcore.app.host.osx-arm64.8.0.27.nupkg.sha512"
+  ],
+  "logs": []
+}
