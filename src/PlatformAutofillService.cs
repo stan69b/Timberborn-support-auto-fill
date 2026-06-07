@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Bindito.Core;
 using Timberborn.BaseComponentSystem;
+using Timberborn.BlockObjectAccesses;
 using Timberborn.BlockObjectTools;
 using Timberborn.BlockSystem;
 using Timberborn.BlueprintSystem;
@@ -22,8 +24,18 @@ namespace PlatformAutofill
     {
         private static readonly bool DiagnosticLogging = true;
         private static readonly string[] SupportTemplatePrefixes = { "Platform", "DoublePlatform", "TriplePlatform" };
-        private static readonly Action<BaseComponent> NoOpPlacedCallback = _ => { };
-
+        private static readonly MethodInfo? AddAccessesAboveGroundMethod =
+            typeof(HighBlockObjectAccessesAdder).GetMethod(
+                "AddAccessesAboveGround",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        private static readonly MethodInfo? UpdateBoundsMethod =
+            typeof(BlockObjectAccessible).GetMethod(
+                "UpdateBounds",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        private static readonly MethodInfo? UpdateAccessesMethod =
+            typeof(BlockObjectAccessible).GetMethod(
+                "UpdateAccesses",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         public int MaxSupportIndex { get; private set; } = 2;
         public bool IsEnabled { get; private set; } = false;
         public bool IsPlacingSupports { get; private set; } = false;
@@ -94,7 +106,10 @@ namespace PlatformAutofill
             IsPlacingSupports = true;
             try
             {
-                foreach (PendingSupportPlacement pendingSupport in _pendingSupportPlacements)
+                foreach (PendingSupportPlacement pendingSupport in _pendingSupportPlacements
+                             .OrderBy(GetSupportBottomZ)
+                             .ThenBy(pendingSupport => pendingSupport.Placement.Coordinates.x)
+                             .ThenBy(pendingSupport => pendingSupport.Placement.Coordinates.y))
                 {
                     string supportBlocks = FormatBlocks(pendingSupport.SupportSpec, pendingSupport.Placement);
                     string validationSummary = BuildValidationSummary(pendingSupport.SupportName, pendingSupport.Placement);
@@ -105,7 +120,10 @@ namespace PlatformAutofill
                     try
                     {
                         IBlockObjectPlacer supportPlacer = _placerService.GetMatchingPlacer(pendingSupport.SupportSpec);
-                        supportPlacer.Place(pendingSupport.SupportSpec, pendingSupport.Placement, NoOpPlacedCallback);
+                        supportPlacer.Place(
+                            pendingSupport.SupportSpec,
+                            pendingSupport.Placement,
+                            component => OnSupportPlaced(component, pendingSupport));
                         LogDiagnostic($"support '{pendingSupport.SupportName}' placed at {pendingSupport.Placement.Coordinates}");
                     }
                     catch (System.Exception ex)
@@ -649,6 +667,43 @@ namespace PlatformAutofill
                 .ToList();
 
             return "[" + string.Join(", ", blocks) + "]";
+        }
+
+        private static int GetSupportBottomZ(PendingSupportPlacement pendingSupport)
+        {
+            return TryGetOccupiedZRange(pendingSupport.SupportSpec, pendingSupport.Placement, out int minZ, out _)
+                ? minZ
+                : pendingSupport.Placement.Coordinates.z;
+        }
+
+        private void OnSupportPlaced(BaseComponent component, PendingSupportPlacement pendingSupport)
+        {
+            if (!TryGetBlockObject(component, out BlockObject? blockObject) || blockObject == null)
+            {
+                LogDiagnostic(
+                    $"support '{pendingSupport.SupportName}' callback did not yield a BlockObject at {pendingSupport.Placement.Coordinates}");
+                return;
+            }
+
+            RefreshSupportAccesses(blockObject, pendingSupport);
+        }
+
+        private static void RefreshSupportAccesses(BlockObject blockObject, PendingSupportPlacement pendingSupport)
+        {
+            try
+            {
+                HighBlockObjectAccessesAdder? accessesAdder = blockObject.GetComponent<HighBlockObjectAccessesAdder>();
+                AddAccessesAboveGroundMethod?.Invoke(accessesAdder, Array.Empty<object>());
+
+                BlockObjectAccessible? blockObjectAccessible = blockObject.GetComponent<BlockObjectAccessible>();
+                UpdateBoundsMethod?.Invoke(blockObjectAccessible, Array.Empty<object>());
+                UpdateAccessesMethod?.Invoke(blockObjectAccessible, Array.Empty<object>());
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    $"[PlatformAutofill] support access refresh failed for '{pendingSupport.SupportName}' at {pendingSupport.Placement.Coordinates}: {ex}");
+            }
         }
 
         private readonly struct PendingSupportPlacement
