@@ -39,6 +39,10 @@
       <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlockObjectTools.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Timberborn.BlockObjectAccesses">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlockObjectAccesses.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Timberborn.BlockSystem">
       <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlockSystem.dll</HintPath>
       <Private>false</Private>
