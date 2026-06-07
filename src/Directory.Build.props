@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(TMPDIR)PlatformAutofillGPT/obj/</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)</IntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(TMPDIR)PlatformAutofillGPT/obj/</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>
