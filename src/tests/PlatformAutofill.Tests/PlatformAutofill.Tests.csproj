@@ -5,6 +5,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <BaseOutputPath>$(TMPDIR)PlatformAutofillGPT.Tests/$(MSBuildProjectName)/bin/</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(Configuration)/$(TargetFramework)/</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
