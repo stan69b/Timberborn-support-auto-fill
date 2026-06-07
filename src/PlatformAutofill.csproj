@@ -1,0 +1,134 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>PlatformAutofill</AssemblyName>
+    <RootNamespace>PlatformAutofill</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>9</LangVersion>
+    <Optimize>true</Optimize>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+    <!-- Build output goes to the mod root (parent of src/) so Timberborn picks it up -->
+    <OutputPath>$(MSBuildProjectDirectory)/..</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- Let NuGet packages (Harmony) copy to output; game DLLs use Private=false -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!-- Harmony 2.4.1 via NuGet – compile reference only, NOT copied to output.
+       The Harmony DLL is provided by the HarmonyLib required mod at runtime. -->
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.4.1">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- Timberborn game assemblies – adjust TIMBERBORN_MANAGED if your Steam path differs -->
+  <PropertyGroup>
+    <TIMBERBORN_MANAGED>$(HOME)/Library/Application Support/Steam/steamapps/common/Timberborn/Timberborn.app/Contents/Resources/Data/Managed</TIMBERBORN_MANAGED>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Bindito.Core">
+      <HintPath>$(TIMBERBORN_MANAGED)/Bindito.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.BlockObjectTools">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlockObjectTools.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.BlockSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlockSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.BuildingTools">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BuildingTools.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.Coordinates">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.Coordinates.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.SingletonSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.SingletonSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.TerrainSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.TerrainSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.ToolPanelSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.ToolPanelSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.CoreUI">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.CoreUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.ToolSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.ToolSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.PathSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.PathSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.FactionSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.FactionSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.GameFactionSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.GameFactionSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(TIMBERBORN_MANAGED)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>$(TIMBERBORN_MANAGED)/UnityEngine.UIElementsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(TIMBERBORN_MANAGED)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Collections.Immutable">
+      <HintPath>$(TIMBERBORN_MANAGED)/System.Collections.Immutable.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.BaseComponentSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BaseComponentSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.EntitySystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.EntitySystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.TemplateSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.TemplateSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.WorldPersistence">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.WorldPersistence.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.BlueprintSystem">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlueprintSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.Buildings">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.Buildings.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Timberborn.ConstructionSites">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.ConstructionSites.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- manifest.json and thumbnail.png are already in the mod root — nothing to copy -->
+
+</Project>

@@ -1,0 +1,13 @@
+{
+  "Name": "Platform Autofill",
+  "Version": "0.7.27",
+  "Id": "Stan.PlatformAutofill",
+  "MinimumGameVersion": "1.0.13.1",
+  "Description": "GPT: Adds an autofill toggle to platform, path, and overhang tools. When enabled, dragging them across a height change automatically places support columns to fill the vertical gap between the terrain and the elevated block so the top stays level. Three support-block types can be selected independently.",
+  "RequiredMods": [
+    {
+      "Id": "Harmony"
+    }
+  ],
+  "OptionalMods": []
+}
