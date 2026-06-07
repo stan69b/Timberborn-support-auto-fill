@@ -1,6 +1,6 @@
 {
   "Name": "Platform Autofill",
-  "Version": "0.7.31",
+  "Version": "1.0.0",
   "Id": "Stan.PlatformAutofill",
   "MinimumGameVersion": "1.0.13.1",
   "Description": "Adds an Autofill toggle to every drag-placeable tool (platforms, paths, overhangs…). While active, dragging across a height change automatically inserts support columns to fill the vertical gap and keep the top surface level with the drag start point. Supports are stacked from largest to smallest (Triple/Double/Single Platform) to minimise block count, with real-time placement previews.",

@@ -2,6 +2,8 @@
 
 A Timberborn mod that adds an **Autofill** toggle to every drag-placeable tool (platforms, paths, overhangs, and similar blocks). When active, dragging across a height change automatically inserts support columns underneath to keep the top surface level with your drag start point.
 
+See [CHANGELOG.md](CHANGELOG.md) for version history and the `1.0.0` release summary.
+
 ## How it works
 
 Whenever you use a block tool that supports drag-placement (platforms, paths, ramps, etc.), a **Platform Autofill — ON/OFF** button appears in the tool panel.
