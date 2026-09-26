@@ -12,7 +12,9 @@ namespace PlatformAutofill
 {
     // Both DefaultBlockObjectPlacer and BuildingPlacer can be called for the same
     // placement. We patch both so we never miss a block, and rely on the service's
-    // coordinate-dedup guard to ignore the second call for the same spot.
+    // per-component dedup guard to ignore the second call for the same object.
+    // Supports are queued from the placed callback and built on the next tick,
+    // to avoid conflicting with Timberborn's active drag/preview state.
 
     [HarmonyPatch(typeof(DefaultBlockObjectPlacer), nameof(DefaultBlockObjectPlacer.Place))]
     public static class DefaultBlockObjectPlacerPatch
@@ -23,7 +25,6 @@ namespace PlatformAutofill
             Placement placement,
             ref Action<BaseComponent> placedCallback)
         {
-            PlatformAutofillService.Instance?.OnBeforePlace(template, placement);
             PatchHelper.Wrap(template, placement, ref placedCallback);
         }
     }
@@ -37,7 +38,6 @@ namespace PlatformAutofill
             Placement placement,
             ref Action<BaseComponent> placedCallback)
         {
-            PlatformAutofillService.Instance?.OnBeforePlace(template, placement);
             PatchHelper.Wrap(template, placement, ref placedCallback);
         }
     }

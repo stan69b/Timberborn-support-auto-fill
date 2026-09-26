@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-09-26
+
+- Added a `Max 3 / Max 2 / Max 1` button next to the toggle to choose the largest support piece used.
+- The ON/OFF toggle and the max support size are now remembered between games.
+- Fixed the autofill button missing after loading a second save in the same session.
+- Diagnostic logging is now off by default (less log spam and better performance).
+- Moved support column planning into `PlatformAutofillRules` and added unit tests for it.
+- Removed an unused placement hook.
+- Added `TODO.md` with the verification checklist, next steps and feature ideas.
+
 ## [1.0.5] - 2026-09-26
 
 - Fixed floating elements: a support column is now only planned, previewed and placed when it reaches all the way down to the ground or an existing base. Partial columns are no longer built.
