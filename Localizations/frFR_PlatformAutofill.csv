@@ -1,0 +1,9 @@
+ID,Text,Comment
+PlatformAutofill.Label,Remplissage auto,Tool panel row title
+PlatformAutofill.On,ON,Toggle button when enabled
+PlatformAutofill.Off,OFF,Toggle button when disabled
+PlatformAutofill.ToggleTooltip,"Activé : en glissant au-dessus d'un vide, des colonnes de plateformes sont construites automatiquement dessous.",Toggle button tooltip
+PlatformAutofill.Max,Max {0},"Max support size button, {0} = piece height (1-3)"
+PlatformAutofill.MaxTooltip,"Plus grand support utilisé : 3 = plateforme triple, 2 = plateforme double, 1 = plateforme",Max size button tooltip
+PlatformAutofill.Summary,+{0} supports,"Shown while dragging, {0} = number of support pieces"
+PlatformAutofill.Unsupported,{0} emplacement(s) impossible(s) à soutenir,"Shown while dragging, {0} = number of spots with no full column"

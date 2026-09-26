@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-09-26
+
+- While dragging, the panel shows how many supports will be added, and how many spots can't be supported (in orange).
+- Added tooltips to the ON/OFF and Max buttons.
+- Added localization files (English and French). Missing translations fall back to English.
+- Fixed the build: added the `Timberborn.Common` reference needed by `IBlockService.GetObjectsAt`.
+
 ## [1.1.0] - 2026-09-26
 
 - Added a `Max 3 / Max 2 / Max 1` button next to the toggle to choose the largest support piece used.
