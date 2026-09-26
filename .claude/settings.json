@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"/Users/stan/Documents/Timberborn/Mods/Platform Autofill/.claude/bump-version.py\""
+            "command": "f=\"/Users/stan/Documents/Timberborn/Mods/Platform Autofill/.claude/bump-version.py\"; [ ! -f \"$f\" ] || python3 \"$f\""
           }
         ]
       }
