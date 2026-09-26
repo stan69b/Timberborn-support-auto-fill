@@ -48,7 +48,17 @@ namespace PlatformAutofill
         private readonly List<PendingSupportPlacement> _pendingSupportPlacements = new();
         private readonly List<Preview> _supportPreviews = new();
         private readonly HashSet<Vector3Int> _pendingSupportCoords = new();
-        private Vector3Int _lastPlacedCoord = new Vector3Int(int.MinValue, int.MinValue, int.MinValue);
+        // Both placer patches can wrap the same callback, so the same placed
+        // component may be reported twice. Dedup by instance (cleared every
+        // tick) rather than by coordinates, which wrongly skipped legitimate
+        // re-placements at the same spot and left them without supports.
+        private readonly HashSet<BaseComponent> _handledPlacedComponents = new();
+        // Previews are Unity objects; creating new ones on every validation or
+        // mouse move leaked GameObjects until the game slowed down or crashed.
+        private readonly Dictionary<PlaceableBlockObjectSpec, Stack<Preview>> _previewPool = new();
+        private readonly Dictionary<Preview, PlaceableBlockObjectSpec> _pooledPreviewSpecs = new();
+        private int _supportValidationDepth;
+        private bool _strictValidation;
         private bool _placeableSpecsLoaded;
         private IBlockService _blockService = null!;
         private FactionService _factionService = null!;
@@ -97,12 +107,15 @@ namespace PlatformAutofill
 
         public void UpdateSingleton()
         {
+            _handledPlacedComponents.Clear();
+
             if (_pendingSupportPlacements.Count == 0 || IsPlacingSupports)
             {
                 return;
             }
 
             IsPlacingSupports = true;
+            HashSet<Vector2Int> failedColumns = new();
             try
             {
                 foreach (PendingSupportPlacement pendingSupport in PlatformAutofillRules.OrderSupportPlacements(
@@ -111,6 +124,30 @@ namespace PlatformAutofill
                              pendingSupport => pendingSupport.Placement.Coordinates.x,
                              pendingSupport => pendingSupport.Placement.Coordinates.y))
                 {
+                    Vector3Int supportCoords = pendingSupport.Placement.Coordinates;
+                    Vector2Int column = new Vector2Int(supportCoords.x, supportCoords.y);
+
+                    // Supports are placed bottom-up. If a lower piece of this
+                    // column failed, anything above it would float in mid-air.
+                    if (failedColumns.Contains(column))
+                    {
+                        LogDiagnostic(
+                            $"support '{pendingSupport.SupportName}' skipped at {supportCoords}: lower support in column failed");
+                        continue;
+                    }
+
+                    // The world may have changed since the support was planned
+                    // (e.g. a path or building placed in the same tick). Never
+                    // place into an occupied cell: overlapping objects make one
+                    // of them vanish or crash the game.
+                    if (AnyWorldObjectAt(pendingSupport.SupportSpec, pendingSupport.Placement, ignore: null))
+                    {
+                        failedColumns.Add(column);
+                        LogDiagnostic(
+                            $"support '{pendingSupport.SupportName}' skipped at {supportCoords}: cell already occupied");
+                        continue;
+                    }
+
                     string supportBlocks = FormatBlocks(pendingSupport.SupportSpec, pendingSupport.Placement);
                     string validationSummary = BuildValidationSummary(pendingSupport.SupportName, pendingSupport.Placement);
                     LogDiagnostic(
@@ -128,6 +165,7 @@ namespace PlatformAutofill
                     }
                     catch (System.Exception ex)
                     {
+                        failedColumns.Add(column);
                         Debug.LogError(
                             $"[PlatformAutofill] support placement failed for '{pendingSupport.SupportName}' at {pendingSupport.Placement.Coordinates}: {ex}");
                     }
@@ -163,7 +201,7 @@ namespace PlatformAutofill
 
         public bool CanBypassPlacementValidation(BlockObject blockObject)
         {
-            if (!IsEnabled || IsPlacingSupports || blockObject == null) return false;
+            if (!IsEnabled || IsPlacingSupports || _strictValidation || blockObject == null) return false;
             if (blockObject.IsFinished) return false;
 
             string templateName = _nameRetriever.GetTemplateName(blockObject);
@@ -178,6 +216,21 @@ namespace PlatformAutofill
             }
 
             if (!blockObject.IsAlmostValid() && !IsPathTemplate(templateName))
+            {
+                return false;
+            }
+
+            return IsAutofillCandidate(blockObject, templateName);
+        }
+
+        private bool IsAutofillCandidate(BlockObject blockObject, string templateName)
+        {
+            // Never let an object into cells that already hold something else.
+            // Paths skip IsAlmostValid above, so without this they could be
+            // dropped on top of existing objects, which then disappeared.
+            if (TryGetSupportSpec(templateName, out BlockObjectSpec? ownSpec)
+                && ownSpec != null
+                && AnyWorldObjectAt(ownSpec, blockObject.Placement, ignore: blockObject))
             {
                 return false;
             }
@@ -200,7 +253,14 @@ namespace PlatformAutofill
 
         public bool CanBypassPlacementValidation(IReadOnlyList<BaseComponent> components)
         {
-            if (!IsEnabled || IsPlacingSupports || components.Count == 0) return false;
+            if (!IsEnabled || IsPlacingSupports || _strictValidation || components.Count == 0) return false;
+
+            // Previously this overrode AreValid for *every* tool while the toggle
+            // was on (buildings, floors, ...), letting invalid placements through.
+            // Now it only applies to our own support checks or to a list that
+            // actually contains an autofill placement with a complete support stack.
+            bool inSupportValidation = _supportValidationDepth > 0;
+            bool hasAutofillCandidate = false;
 
             foreach (BaseComponent component in components)
             {
@@ -213,9 +273,16 @@ namespace PlatformAutofill
                 {
                     return false;
                 }
+
+                if (!inSupportValidation && !hasAutofillCandidate && !blockObject.IsFinished)
+                {
+                    string templateName = _nameRetriever.GetTemplateName(blockObject);
+                    hasAutofillCandidate = SupportsAutofill(templateName)
+                        && IsAutofillCandidate(blockObject, templateName);
+                }
             }
 
-            return true;
+            return inSupportValidation || hasAutofillCandidate;
         }
 
         public void OnBeforePlace(BlockObjectSpec blockSpec, Placement placement)
@@ -244,7 +311,9 @@ namespace PlatformAutofill
 
             foreach (Placement placement in placements)
             {
-                AppendSupportPlacements(
+                // Only show a column when the whole stack reaches the ground or
+                // an existing base; partial stacks rendered as floating pieces.
+                TryAppendCompleteSupportStack(
                     target.TemplateName,
                     target.Faction,
                     target.RuntimeSpec,
@@ -267,7 +336,7 @@ namespace PlatformAutofill
                     continue;
                 }
 
-                Preview preview = _previewFactory.Create(placeableSpec);
+                Preview preview = RentPreview(placeableSpec);
                 preview.Reposition(pendingSupport.Placement);
                 _supportPreviews.Add(preview);
             }
@@ -280,18 +349,26 @@ namespace PlatformAutofill
             List<Preview> buildableSupportPreviews = new();
             List<Preview> unbuildableSupportPreviews = new();
 
-            foreach (Preview supportPreview in _supportPreviews)
+            _supportValidationDepth++;
+            try
             {
-                var previewComponent = new List<BaseComponent> { supportPreview };
-                bool isValid = _validationService.AreValid(previewComponent, out _);
-                if (isValid)
+                foreach (Preview supportPreview in _supportPreviews)
                 {
-                    buildableSupportPreviews.Add(supportPreview);
+                    var previewComponent = new List<BaseComponent> { supportPreview };
+                    bool isValid = _validationService.AreValid(previewComponent, out _);
+                    if (isValid)
+                    {
+                        buildableSupportPreviews.Add(supportPreview);
+                    }
+                    else
+                    {
+                        unbuildableSupportPreviews.Add(supportPreview);
+                    }
                 }
-                else
-                {
-                    unbuildableSupportPreviews.Add(supportPreview);
-                }
+            }
+            finally
+            {
+                _supportValidationDepth--;
             }
 
             if (buildableSupportPreviews.Count > 0)
@@ -316,9 +393,38 @@ namespace PlatformAutofill
             {
                 supportPreview.Hide();
                 supportPreview.RemoveFromPreviewServices();
+                ReturnPreview(supportPreview);
             }
 
             _supportPreviews.Clear();
+        }
+
+        private Preview RentPreview(PlaceableBlockObjectSpec spec)
+        {
+            if (_previewPool.TryGetValue(spec, out Stack<Preview>? pool) && pool.Count > 0)
+            {
+                return pool.Pop();
+            }
+
+            Preview preview = _previewFactory.Create(spec);
+            _pooledPreviewSpecs[preview] = spec;
+            return preview;
+        }
+
+        private void ReturnPreview(Preview preview)
+        {
+            if (!_pooledPreviewSpecs.TryGetValue(preview, out PlaceableBlockObjectSpec? spec) || spec == null)
+            {
+                return;
+            }
+
+            if (!_previewPool.TryGetValue(spec, out Stack<Preview>? pool))
+            {
+                pool = new Stack<Preview>();
+                _previewPool[spec] = pool;
+            }
+
+            pool.Push(preview);
         }
 
         // -----------------------------------------------------------------------
@@ -328,19 +434,16 @@ namespace PlatformAutofill
         public void OnBlockPlaced(BaseComponent component, Placement placement, BlockObjectSpec blockSpec)
         {
             string name = _nameRetriever.GetTemplateName(component);
-            var coords = placement.Coordinates;
 
             if (!string.IsNullOrEmpty(name) && !_templateNameByRuntimeSpec.ContainsKey(blockSpec))
             {
                 _templateNameByRuntimeSpec[blockSpec] = name;
             }
 
-            if (coords == _lastPlacedCoord)
+            if (component == null || !_handledPlacedComponents.Add(component))
             {
                 return;
             }
-
-            _lastPlacedCoord = coords;
 
             if (!IsEnabled || IsPlacingSupports) return;
             if (!TryResolveAutofillTarget(name, out string? faction) || faction == null) return;
@@ -356,8 +459,8 @@ namespace PlatformAutofill
         {
             try
             {
-                AppendSupportPlacements(name, faction, blockSpec, placement, includePreviews: false, _pendingSupportPlacements, _pendingSupportCoords);
-                return true;
+                return TryAppendCompleteSupportStack(
+                    name, faction, blockSpec, placement, includePreviews: false, _pendingSupportPlacements, _pendingSupportCoords);
             }
             catch (Exception ex)
             {
@@ -367,7 +470,10 @@ namespace PlatformAutofill
             }
         }
 
-        private void AppendSupportPlacements(
+        // Plans one support column and only commits it when it fully closes the
+        // gap. A partial column used to be placed anyway, leaving the top block
+        // (and the upper supports) floating above an empty cell.
+        private bool TryAppendCompleteSupportStack(
             string name,
             string faction,
             BlockObjectSpec blockSpec,
@@ -375,6 +481,32 @@ namespace PlatformAutofill
             bool includePreviews,
             ICollection<PendingSupportPlacement> supportPlacements,
             ISet<Vector3Int> knownSupportCoords)
+        {
+            List<PendingSupportPlacement> column = new();
+            if (!AppendSupportPlacements(name, faction, blockSpec, placement, includePreviews, column))
+            {
+                return false;
+            }
+
+            foreach (PendingSupportPlacement pendingSupport in column)
+            {
+                if (knownSupportCoords.Add(pendingSupport.Placement.Coordinates))
+                {
+                    supportPlacements.Add(pendingSupport);
+                }
+            }
+
+            return column.Count > 0;
+        }
+
+        // Returns true when the planned column reaches the gap bottom.
+        private bool AppendSupportPlacements(
+            string name,
+            string faction,
+            BlockObjectSpec blockSpec,
+            Placement placement,
+            bool includePreviews,
+            ICollection<PendingSupportPlacement> supportPlacements)
         {
             var coords = placement.Coordinates;
             int terrainTop = _terrainService.GetTerrainHeight(coords);
@@ -390,7 +522,7 @@ namespace PlatformAutofill
                 $"place '{name}' at {coords} placementZ={placement.Coordinates.z} occupiedZ={placedBottomZ}..{placedTopZ} " +
                 $"terrainTop={terrainTop} gap={gapBottom}..{gapTop} orientation={placement.Orientation} flip={placement.FlipMode} " +
                 $"specType={blockSpec.GetType().FullName}");
-            if (gapTop < gapBottom) return;
+            if (gapTop < gapBottom) return true;
 
             int currentTopZ = gapTop;
             while (currentTopZ >= gapBottom)
@@ -430,10 +562,7 @@ namespace PlatformAutofill
                         $"support '{supportName}' queued placementZ={supportCoord.z} occupiedZ={supportBottomZ}..{supportTopZ} " +
                         $"for desiredTop={currentTopZ}: {searchSummary} specType={supportSpec.GetType().FullName}");
 
-                    if (knownSupportCoords.Add(supportCoord))
-                    {
-                        supportPlacements.Add(new PendingSupportPlacement(supportName, supportSpec, supportPlacement));
-                    }
+                    supportPlacements.Add(new PendingSupportPlacement(supportName, supportSpec, supportPlacement));
 
                     currentTopZ = supportBottomZ - 1;
                     placed = true;
@@ -442,6 +571,15 @@ namespace PlatformAutofill
 
                 if (!placed) break;
             }
+
+            bool complete = currentTopZ < gapBottom;
+            if (!complete)
+            {
+                LogDiagnostic(
+                    $"place '{name}' at {coords}: support column incomplete, stopped at z={currentTopZ} (gapBottom={gapBottom})");
+            }
+
+            return complete;
         }
 
         // -----------------------------------------------------------------------
@@ -548,9 +686,17 @@ namespace PlatformAutofill
                         ? new PlatformAutofillRules.OccupiedZRange(minZ, maxZ)
                         : null;
                 },
-                candidateZ => IsSupportPlacementValid(
-                    supportName,
-                    new Placement(new Vector3Int(x, y, candidateZ), orientation, flipMode)),
+                candidateZ =>
+                {
+                    Placement candidatePlacement = new Placement(new Vector3Int(x, y, candidateZ), orientation, flipMode);
+                    // The bottom piece rests on terrain or an existing object, so
+                    // it must pass the game's own validation. Otherwise supports
+                    // got stacked on things that cannot carry them (e.g.
+                    // impermeable floors), which broke or crashed the game.
+                    bool isBottomPiece = TryGetOccupiedZRange(supportSpec, candidatePlacement, out int minZ, out _)
+                        && minZ == gapBottomZ;
+                    return IsSupportPlacementValid(supportName, candidatePlacement, strict: isBottomPiece);
+                },
                 out PlatformAutofillRules.SupportPlacementSelection selection,
                 out searchSummary);
 
@@ -605,7 +751,7 @@ namespace PlatformAutofill
 
         private string BuildValidationSummary(string templateName, Placement placement)
         {
-            return TryValidateSupportPlacement(templateName, placement, out bool isValid, out string errorMessage)
+            return TryValidateSupportPlacement(templateName, placement, strict: false, out bool isValid, out string errorMessage)
                 ? $"isValid={isValid} error='{errorMessage}'"
                 : "no-placeable-spec";
         }
@@ -619,15 +765,16 @@ namespace PlatformAutofill
             return "[" + string.Join(", ", blocks) + "]";
         }
 
-        private bool IsSupportPlacementValid(string templateName, Placement placement)
+        private bool IsSupportPlacementValid(string templateName, Placement placement, bool strict)
         {
-            return TryValidateSupportPlacement(templateName, placement, out bool isValid, out _)
+            return TryValidateSupportPlacement(templateName, placement, strict, out bool isValid, out _)
                 && isValid;
         }
 
         private bool TryValidateSupportPlacement(
             string templateName,
             Placement placement,
+            bool strict,
             out bool isValid,
             out string errorMessage)
         {
@@ -641,9 +788,25 @@ namespace PlatformAutofill
             }
 
             Preview? preview = null;
+            bool previousStrict = _strictValidation;
+            // Our own shown support previews sit exactly where the probe goes;
+            // keep them out of the game's collision checks while probing so the
+            // dragged block isn't wrongly rejected (it vanished/turned red).
+            List<Preview>? suspendedPreviews = null;
+            if (strict && _supportPreviews.Count > 0)
+            {
+                suspendedPreviews = new List<Preview>(_supportPreviews);
+                foreach (Preview shownPreview in suspendedPreviews)
+                {
+                    shownPreview.RemoveFromPreviewServices();
+                }
+            }
+
+            _supportValidationDepth++;
+            _strictValidation = previousStrict || strict;
             try
             {
-                preview = _previewFactory.Create(placeableSpec);
+                preview = RentPreview(placeableSpec);
                 preview.Reposition(placement);
 
                 var previews = new List<BaseComponent> { preview };
@@ -657,12 +820,39 @@ namespace PlatformAutofill
             }
             finally
             {
+                _strictValidation = previousStrict;
+                _supportValidationDepth--;
                 if (preview != null)
                 {
                     preview.Hide();
                     preview.RemoveFromPreviewServices();
+                    ReturnPreview(preview);
+                }
+
+                if (suspendedPreviews != null)
+                {
+                    foreach (Preview shownPreview in suspendedPreviews)
+                    {
+                        shownPreview.AddToPreviewServices();
+                    }
                 }
             }
+        }
+
+        private bool AnyWorldObjectAt(BlockObjectSpec blockSpec, Placement placement, BlockObject? ignore)
+        {
+            foreach (var block in blockSpec.GetBlocks(placement))
+            {
+                foreach (BlockObject existing in _blockService.GetObjectsAt(block.Coordinates))
+                {
+                    if (existing != null && existing != ignore)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private static int GetSupportBottomZ(PendingSupportPlacement pendingSupport)
@@ -754,7 +944,7 @@ namespace PlatformAutofill
             Preview? preview = null;
             try
             {
-                preview = _previewFactory.Create(spec);
+                preview = RentPreview(spec);
                 BlockObject? blockObject = preview.BlockObject;
                 if (blockObject == null)
                 {
@@ -787,6 +977,7 @@ namespace PlatformAutofill
                 {
                     preview.Hide();
                     preview.RemoveFromPreviewServices();
+                    ReturnPreview(preview);
                 }
             }
         }
@@ -873,7 +1064,7 @@ namespace PlatformAutofill
             {
                 List<PendingSupportPlacement> supportPlacements = new();
                 HashSet<Vector3Int> knownSupportCoords = new();
-                AppendSupportPlacements(
+                return TryAppendCompleteSupportStack(
                     templateName,
                     resolvedFaction,
                     runtimeSpec,
@@ -881,7 +1072,6 @@ namespace PlatformAutofill
                     includePreviews: false,
                     supportPlacements,
                     knownSupportCoords);
-                return supportPlacements.Count > 0;
             }
             catch (Exception ex)
             {

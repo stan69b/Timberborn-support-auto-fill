@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2026-09-26
+
+- Fixed floating elements: a support column is now only planned, previewed and placed when it reaches all the way down to the ground or an existing base. Partial columns are no longer built.
+- Fixed floating supports when a lower support of a column fails to place: the pieces above it are now skipped.
+- Fixed objects disappearing when dragging paths (roads) or other blocks over existing objects: autofill no longer lets a placement into cells that are already occupied, and supports are never placed into occupied cells.
+- Fixed a likely crash when supports were stacked on objects that cannot carry them (e.g. impermeable floors): the bottom support now has to pass the game's own validation.
+- The validation override no longer affects unrelated tools (buildings, floors, …) while the toggle is on.
+- Fixed a memory leak where preview objects were created on every mouse move and validation check; previews are now reused. This also reduces lag and stale/ghost previews while dragging.
+- Fixed supports sometimes not being generated when placing again at the same spot as the previous placement.
+
 ## [1.0.4] - 2026-06-07
 
 - Fixed an autofill bug where supports could be planned through already occupied cells below the dragged structure.
