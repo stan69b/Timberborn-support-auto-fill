@@ -63,6 +63,38 @@ namespace PlatformAutofill
             return terrainTop;
         }
 
+        internal delegate bool SupportPieceFitter<T>(int desiredTopZ, out T piece, out int bottomZ);
+
+        // Fills gapBottomZ..gapTopZ from the top down, one piece at a time.
+        // Returns true only when the column reaches gapBottomZ; a partial column
+        // must never be built, otherwise everything above it floats.
+        internal static bool TryPlanSupportColumn<T>(
+            int gapBottomZ,
+            int gapTopZ,
+            SupportPieceFitter<T> fitPiece,
+            ICollection<T> pieces)
+        {
+            int currentTopZ = gapTopZ;
+            while (currentTopZ >= gapBottomZ)
+            {
+                if (!fitPiece(currentTopZ, out T piece, out int bottomZ))
+                {
+                    return false;
+                }
+
+                // A piece must make progress downwards, or we would loop forever.
+                if (bottomZ > currentTopZ || bottomZ < gapBottomZ)
+                {
+                    return false;
+                }
+
+                pieces.Add(piece);
+                currentTopZ = bottomZ - 1;
+            }
+
+            return true;
+        }
+
         internal static IEnumerable<T> OrderSupportPlacements<T>(
             IEnumerable<T> placements,
             Func<T, int> bottomZSelector,
