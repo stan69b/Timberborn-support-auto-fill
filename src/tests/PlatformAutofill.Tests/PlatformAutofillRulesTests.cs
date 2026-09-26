@@ -290,6 +290,91 @@ namespace PlatformAutofill.Tests
             Assert.Contains("candidates=[]", summary);
         }
 
+        [Fact]
+        public void TryPlanSupportColumn_StacksPiecesUntilGapBottom()
+        {
+            // Pieces of height 3 while there is room, otherwise height 1.
+            List<(int Bottom, int Top)> pieces = new List<(int Bottom, int Top)>();
+
+            bool complete = PlatformAutofillRules.TryPlanSupportColumn<(int Bottom, int Top)>(
+                gapBottomZ: 2,
+                gapTopZ: 8,
+                (int desiredTopZ, out (int Bottom, int Top) piece, out int bottomZ) =>
+                {
+                    int height = desiredTopZ - 2 + 1 >= 3 ? 3 : 1;
+                    bottomZ = desiredTopZ - height + 1;
+                    piece = (bottomZ, desiredTopZ);
+                    return true;
+                },
+                pieces);
+
+            Assert.True(complete);
+            Assert.Equal(new[] { (6, 8), (3, 5), (2, 2) }, pieces);
+        }
+
+        [Fact]
+        public void TryPlanSupportColumn_ReportsIncompleteWhenNoPieceFits()
+        {
+            List<int> pieces = new List<int>();
+
+            bool complete = PlatformAutofillRules.TryPlanSupportColumn<int>(
+                gapBottomZ: 1,
+                gapTopZ: 6,
+                (int desiredTopZ, out int piece, out int bottomZ) =>
+                {
+                    // Only fits while the top is at or above 4.
+                    piece = desiredTopZ;
+                    bottomZ = desiredTopZ - 1;
+                    return desiredTopZ >= 4;
+                },
+                pieces);
+
+            Assert.False(complete);
+            Assert.Equal(new[] { 6, 4 }, pieces);
+        }
+
+        [Fact]
+        public void TryPlanSupportColumn_EmptyGapIsComplete()
+        {
+            List<int> pieces = new List<int>();
+
+            bool complete = PlatformAutofillRules.TryPlanSupportColumn<int>(
+                gapBottomZ: 5,
+                gapTopZ: 4,
+                (int desiredTopZ, out int piece, out int bottomZ) =>
+                {
+                    piece = 0;
+                    bottomZ = 0;
+                    return true;
+                },
+                pieces);
+
+            Assert.True(complete);
+            Assert.Empty(pieces);
+        }
+
+        [Theory]
+        [InlineData(7)] // piece bottom above its own top: no progress
+        [InlineData(0)] // piece dips below the gap bottom
+        public void TryPlanSupportColumn_RejectsPiecesOutsideTheGap(int reportedBottomZ)
+        {
+            List<int> pieces = new List<int>();
+
+            bool complete = PlatformAutofillRules.TryPlanSupportColumn<int>(
+                gapBottomZ: 2,
+                gapTopZ: 6,
+                (int desiredTopZ, out int piece, out int bottomZ) =>
+                {
+                    piece = desiredTopZ;
+                    bottomZ = reportedBottomZ;
+                    return true;
+                },
+                pieces);
+
+            Assert.False(complete);
+            Assert.Empty(pieces);
+        }
+
         private struct SupportPlacementStub
         {
             public SupportPlacementStub(string name, int bottomZ, int x, int y)
