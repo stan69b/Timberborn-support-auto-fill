@@ -22,7 +22,10 @@ namespace PlatformAutofill
 {
     public class PlatformAutofillService : ILoadableSingleton, IUpdatableSingleton
     {
-        private static readonly bool DiagnosticLogging = true;
+        // Verbose per-placement logging; flip to true when debugging.
+        private static readonly bool DiagnosticLogging = false;
+        private const string EnabledPrefKey = "PlatformAutofill.Enabled";
+        private const string MaxSupportPrefKey = "PlatformAutofill.MaxSupportIndex";
         private static readonly MethodInfo? AddAccessesAboveGroundMethod =
             typeof(HighBlockObjectAccessesAdder).GetMethod(
                 "AddAccessesAboveGround",
@@ -102,7 +105,38 @@ namespace PlatformAutofill
         public void Load()
         {
             Instance = this;
+            LoadSettings();
             RefreshPlaceableBlockSpecs();
+        }
+
+        // Settings are stored per player (not per save), so the toggle and the
+        // chosen support size survive loading another game or restarting.
+        private void LoadSettings()
+        {
+            try
+            {
+                IsEnabled = PlayerPrefs.GetInt(EnabledPrefKey, 0) == 1;
+                MaxSupportIndex = PlatformAutofillRules.ClampSupportIndex(
+                    PlayerPrefs.GetInt(MaxSupportPrefKey, PlatformAutofillRules.SupportTemplatePrefixes.Length - 1));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PlatformAutofill] loading settings failed: {ex}");
+            }
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                PlayerPrefs.SetInt(EnabledPrefKey, IsEnabled ? 1 : 0);
+                PlayerPrefs.SetInt(MaxSupportPrefKey, MaxSupportIndex);
+                PlayerPrefs.Save();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PlatformAutofill] saving settings failed: {ex}");
+            }
         }
 
         public void UpdateSingleton()
@@ -190,9 +224,22 @@ namespace PlatformAutofill
             {
                 ClearSupportPreviews();
             }
+
+            SaveSettings();
         }
 
-        public void SetMaxSupport(int index) => MaxSupportIndex = PlatformAutofillRules.ClampSupportIndex(index);
+        public void SetMaxSupport(int index)
+        {
+            MaxSupportIndex = PlatformAutofillRules.ClampSupportIndex(index);
+            SaveSettings();
+        }
+
+        // Cycles Triple -> Double -> Single -> Triple.
+        public void CycleMaxSupport()
+        {
+            int next = MaxSupportIndex - 1;
+            SetMaxSupport(next < 0 ? PlatformAutofillRules.SupportTemplatePrefixes.Length - 1 : next);
+        }
 
         public bool SupportsAutofill(PlaceableBlockObjectSpec? template)
         {
@@ -283,13 +330,6 @@ namespace PlatformAutofill
             }
 
             return inSupportValidation || hasAutofillCandidate;
-        }
-
-        public void OnBeforePlace(BlockObjectSpec blockSpec, Placement placement)
-        {
-            // Deliberately left empty. Support placement is queued after the top
-            // block is created and processed on the next update tick to avoid
-            // conflicting with Timberborn's active drag/preview state.
         }
 
         public void UpdateSupportPreviews(PlaceableBlockObjectSpec template, IEnumerable<Placement> placements)
@@ -524,62 +564,76 @@ namespace PlatformAutofill
                 $"specType={blockSpec.GetType().FullName}");
             if (gapTop < gapBottom) return true;
 
-            int currentTopZ = gapTop;
-            while (currentTopZ >= gapBottom)
-            {
-                bool placed = false;
-                foreach (string supportName in PlatformAutofillRules.EnumerateSupportTemplateNames(MaxSupportIndex, faction))
-                {
-                    if (!TryGetSupportSpec(supportName, out BlockObjectSpec? supportSpec)
-                        || supportSpec == null)
-                    {
-                        LogDiagnostic(
-                            $"support '{supportName}' unavailable for top '{name}'");
-                        continue;
-                    }
+            bool complete = PlatformAutofillRules.TryPlanSupportColumn<PendingSupportPlacement>(
+                gapBottom,
+                gapTop,
+                (int desiredTopZ, out PendingSupportPlacement piece, out int bottomZ) =>
+                    TryFitSupportPiece(name, faction, coords.x, coords.y, gapBottom, desiredTopZ, placement, out piece, out bottomZ),
+                supportPlacements);
 
-                    if (!TryCreateSupportPlacement(
-                            supportName,
-                            supportSpec,
-                            coords.x,
-                            coords.y,
-                            gapBottom,
-                            currentTopZ,
-                            placement.Orientation,
-                            placement.FlipMode,
-                            out Placement supportPlacement,
-                            out int supportBottomZ,
-                            out int supportTopZ,
-                            out string searchSummary))
-                    {
-                        LogDiagnostic(
-                            $"support '{supportName}' no fit for gapBottom={gapBottom} desiredTop={currentTopZ}: {searchSummary}");
-                        continue;
-                    }
-
-                    var supportCoord = supportPlacement.Coordinates;
-                    LogDiagnostic(
-                        $"support '{supportName}' queued placementZ={supportCoord.z} occupiedZ={supportBottomZ}..{supportTopZ} " +
-                        $"for desiredTop={currentTopZ}: {searchSummary} specType={supportSpec.GetType().FullName}");
-
-                    supportPlacements.Add(new PendingSupportPlacement(supportName, supportSpec, supportPlacement));
-
-                    currentTopZ = supportBottomZ - 1;
-                    placed = true;
-                    break;
-                }
-
-                if (!placed) break;
-            }
-
-            bool complete = currentTopZ < gapBottom;
             if (!complete)
             {
                 LogDiagnostic(
-                    $"place '{name}' at {coords}: support column incomplete, stopped at z={currentTopZ} (gapBottom={gapBottom})");
+                    $"place '{name}' at {coords}: support column incomplete (gap={gapBottom}..{gapTop})");
             }
 
             return complete;
+        }
+
+        // Tries each allowed support size, largest first, for a piece whose top
+        // sits exactly at desiredTopZ.
+        private bool TryFitSupportPiece(
+            string name,
+            string faction,
+            int x,
+            int y,
+            int gapBottom,
+            int desiredTopZ,
+            Placement topPlacement,
+            out PendingSupportPlacement piece,
+            out int bottomZ)
+        {
+            foreach (string supportName in PlatformAutofillRules.EnumerateSupportTemplateNames(MaxSupportIndex, faction))
+            {
+                if (!TryGetSupportSpec(supportName, out BlockObjectSpec? supportSpec)
+                    || supportSpec == null)
+                {
+                    LogDiagnostic(
+                        $"support '{supportName}' unavailable for top '{name}'");
+                    continue;
+                }
+
+                if (!TryCreateSupportPlacement(
+                        supportName,
+                        supportSpec,
+                        x,
+                        y,
+                        gapBottom,
+                        desiredTopZ,
+                        topPlacement.Orientation,
+                        topPlacement.FlipMode,
+                        out Placement supportPlacement,
+                        out int supportBottomZ,
+                        out int supportTopZ,
+                        out string searchSummary))
+                {
+                    LogDiagnostic(
+                        $"support '{supportName}' no fit for gapBottom={gapBottom} desiredTop={desiredTopZ}: {searchSummary}");
+                    continue;
+                }
+
+                LogDiagnostic(
+                    $"support '{supportName}' queued placementZ={supportPlacement.Coordinates.z} occupiedZ={supportBottomZ}..{supportTopZ} " +
+                    $"for desiredTop={desiredTopZ}: {searchSummary}");
+
+                piece = new PendingSupportPlacement(supportName, supportSpec, supportPlacement);
+                bottomZ = supportBottomZ;
+                return true;
+            }
+
+            piece = default;
+            bottomZ = int.MinValue;
+            return false;
         }
 
         // -----------------------------------------------------------------------
