@@ -57,6 +57,10 @@
       <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.Common.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Timberborn.Localization">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.Localization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Timberborn.BuildingTools">
       <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BuildingTools.dll</HintPath>
       <Private>false</Private>

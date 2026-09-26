@@ -44,6 +44,11 @@ namespace PlatformAutofill
 
         public static PlatformAutofillService? Instance { get; private set; }
 
+        // What the current drag would add, for the tool panel.
+        public int PreviewSupportCount { get; private set; }
+        public int PreviewUnsupportedCount { get; private set; }
+        public event Action? PreviewSummaryChanged;
+
         private readonly Dictionary<string, BlockObjectSpec> _blockSpecByName = new();
         private readonly Dictionary<string, PlaceableBlockObjectSpec> _placeableSpecByName = new();
         private readonly Dictionary<BlockObjectSpec, string> _templateNameByRuntimeSpec = new();
@@ -334,20 +339,23 @@ namespace PlatformAutofill
 
         public void UpdateSupportPreviews(PlaceableBlockObjectSpec template, IEnumerable<Placement> placements)
         {
-            ClearSupportPreviews();
+            ClearSupportPreviews(resetSummary: false);
 
             if (!IsEnabled || IsPlacingSupports)
             {
+                SetPreviewSummary(0, 0);
                 return;
             }
 
             if (!TryGetAutofillTarget(template, out AutofillTarget target))
             {
+                SetPreviewSummary(0, 0);
                 return;
             }
 
             List<PendingSupportPlacement> previewPlacements = new();
             HashSet<Vector3Int> previewCoords = new();
+            int unsupportedSpots = 0;
 
             foreach (Placement placement in placements)
             {
@@ -360,8 +368,15 @@ namespace PlatformAutofill
                     placement,
                     includePreviews: true,
                     previewPlacements,
-                    previewCoords);
+                    previewCoords,
+                    out bool incomplete);
+                if (incomplete)
+                {
+                    unsupportedSpots++;
+                }
             }
+
+            SetPreviewSummary(previewPlacements.Count, unsupportedSpots);
 
             if (previewPlacements.Count == 0)
             {
@@ -422,8 +437,15 @@ namespace PlatformAutofill
             }
         }
 
-        public void ClearSupportPreviews()
+        public void ClearSupportPreviews() => ClearSupportPreviews(resetSummary: true);
+
+        private void ClearSupportPreviews(bool resetSummary)
         {
+            if (resetSummary)
+            {
+                SetPreviewSummary(0, 0);
+            }
+
             if (_supportPreviews.Count == 0)
             {
                 return;
@@ -437,6 +459,18 @@ namespace PlatformAutofill
             }
 
             _supportPreviews.Clear();
+        }
+
+        private void SetPreviewSummary(int supportCount, int unsupportedCount)
+        {
+            if (supportCount == PreviewSupportCount && unsupportedCount == PreviewUnsupportedCount)
+            {
+                return;
+            }
+
+            PreviewSupportCount = supportCount;
+            PreviewUnsupportedCount = unsupportedCount;
+            PreviewSummaryChanged?.Invoke();
         }
 
         private Preview RentPreview(PlaceableBlockObjectSpec spec)
@@ -522,8 +556,24 @@ namespace PlatformAutofill
             ICollection<PendingSupportPlacement> supportPlacements,
             ISet<Vector3Int> knownSupportCoords)
         {
+            return TryAppendCompleteSupportStack(
+                name, faction, blockSpec, placement, includePreviews, supportPlacements, knownSupportCoords, out _);
+        }
+
+        // incomplete: there is a gap below the block but no full column fits.
+        private bool TryAppendCompleteSupportStack(
+            string name,
+            string faction,
+            BlockObjectSpec blockSpec,
+            Placement placement,
+            bool includePreviews,
+            ICollection<PendingSupportPlacement> supportPlacements,
+            ISet<Vector3Int> knownSupportCoords,
+            out bool incomplete)
+        {
             List<PendingSupportPlacement> column = new();
-            if (!AppendSupportPlacements(name, faction, blockSpec, placement, includePreviews, column))
+            incomplete = !AppendSupportPlacements(name, faction, blockSpec, placement, includePreviews, column);
+            if (incomplete)
             {
                 return false;
             }
