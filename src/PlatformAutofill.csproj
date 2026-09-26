@@ -53,6 +53,10 @@
       <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BlockSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Timberborn.Common">
+      <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Timberborn.BuildingTools">
       <HintPath>$(TIMBERBORN_MANAGED)/Timberborn.BuildingTools.dll</HintPath>
       <Private>false</Private>
