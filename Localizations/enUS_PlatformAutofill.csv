@@ -1,0 +1,9 @@
+ID,Text,Comment
+PlatformAutofill.Label,Platform Autofill,Tool panel row title
+PlatformAutofill.On,ON,Toggle button when enabled
+PlatformAutofill.Off,OFF,Toggle button when disabled
+PlatformAutofill.ToggleTooltip,"When ON, dragging over a drop automatically builds platform columns underneath.",Toggle button tooltip
+PlatformAutofill.Max,Max {0},"Max support size button, {0} = piece height (1-3)"
+PlatformAutofill.MaxTooltip,"Largest support piece used: 3 = TriplePlatform, 2 = DoublePlatform, 1 = Platform",Max size button tooltip
+PlatformAutofill.Summary,+{0} supports,"Shown while dragging, {0} = number of support pieces"
+PlatformAutofill.Unsupported,{0} spot(s) can't be supported,"Shown while dragging, {0} = number of spots with no full column"
