@@ -1,4 +1,3 @@
-using System;
 using Bindito.Core;
 using Timberborn.BlockObjectTools;
 using Timberborn.SingletonSystem;
@@ -11,13 +10,14 @@ namespace PlatformAutofill
 {
     public class PlatformAutofillFragment : IToolFragment
     {
+        private static readonly string[] SupportSizeLabels = { "Max 1", "Max 2", "Max 3" };
+
         private PlatformAutofillService _service = null!;
         private EventBus _eventBus = null!;
 
-        private const string UiCreatedKey = "PA.UICreated";
-
         private VisualElement? _root;
         private Button _toggleButton = null!;
+        private Button _maxSizeButton = null!;
 
         [Inject]
         public void InjectDependencies(PlatformAutofillService service, EventBus eventBus)
@@ -28,13 +28,16 @@ namespace PlatformAutofill
 
         public VisualElement InitializeFragment()
         {
-            if (AppDomain.CurrentDomain.GetData(UiCreatedKey) is true)
+            // The fragment is shared by every tool panel module, so the UI must
+            // only be built once. This used to be a process-wide flag, which left
+            // the button missing after loading a second save in the same session;
+            // the fragment is a per-game singleton, so an instance check is enough.
+            if (_root != null)
             {
                 var placeholder = new VisualElement();
                 placeholder.style.display = DisplayStyle.None;
                 return placeholder;
             }
-            AppDomain.CurrentDomain.SetData(UiCreatedKey, true);
 
             _root = BuildUI();
             _root.style.display = DisplayStyle.None;
@@ -45,16 +48,28 @@ namespace PlatformAutofill
         [OnEvent]
         public void OnToolEntered(ToolEnteredEvent evt)
         {
-            _root!.style.display = evt.Tool is BlockObjectTool blockObjectTool
-                && _service.SupportsAutofill(blockObjectTool.Template)
-                ? DisplayStyle.Flex
-                : DisplayStyle.None;
+            if (_root == null)
+            {
+                return;
+            }
+
+            bool supported = evt.Tool is BlockObjectTool blockObjectTool
+                && _service.SupportsAutofill(blockObjectTool.Template);
+            _root.style.display = supported ? DisplayStyle.Flex : DisplayStyle.None;
+            if (supported)
+            {
+                // Settings are loaded after the UI is built, so refresh on show.
+                RefreshButtonState();
+            }
         }
 
         [OnEvent]
         public void OnToolExited(ToolExitedEvent evt)
         {
-            _root!.style.display = DisplayStyle.None;
+            if (_root != null)
+            {
+                _root.style.display = DisplayStyle.None;
+            }
         }
 
         private VisualElement BuildUI()
@@ -75,6 +90,15 @@ namespace PlatformAutofill
             label.style.flexGrow  = 1;
             root.Add(label);
 
+            // Largest support piece allowed (Triple/Double/Single platform).
+            _maxSizeButton = new Button(OnMaxSizeClicked);
+            _maxSizeButton.style.width    = 52;
+            _maxSizeButton.style.height   = 22;
+            _maxSizeButton.style.fontSize = 11;
+            _maxSizeButton.style.marginRight = 4;
+            _maxSizeButton.tooltip = "Largest support piece used: 3 = TriplePlatform, 2 = DoublePlatform, 1 = Platform";
+            root.Add(_maxSizeButton);
+
             _toggleButton = new Button(OnToggleClicked);
             _toggleButton.style.width    = 52;
             _toggleButton.style.height   = 22;
@@ -92,6 +116,12 @@ namespace PlatformAutofill
             RefreshButtonState();
         }
 
+        private void OnMaxSizeClicked()
+        {
+            _service.CycleMaxSupport();
+            RefreshButtonState();
+        }
+
         private void RefreshButtonState()
         {
             if (_service.IsEnabled)
@@ -104,6 +134,9 @@ namespace PlatformAutofill
                 _toggleButton.text         = "OFF";
                 _toggleButton.style.color  = new Color(0.65f, 0.65f, 0.65f);
             }
+
+            int index = PlatformAutofillRules.ClampSupportIndex(_service.MaxSupportIndex);
+            _maxSizeButton.text = SupportSizeLabels[index];
         }
     }
 }
