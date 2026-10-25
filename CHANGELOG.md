@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-10-25
+
+- Targets Timberborn 1.1.2 (`1.1.2.8-ffc2de0-sm`). `MinimumGameVersion` raised from `1.0.13.1` to `1.1.2.8`: the mod is now compiled against the 1.1 game files (Unity 6), so 1.0 is no longer supported.
+
 ## [1.2.0] - 2026-09-26
 
 - While dragging, the panel shows how many supports will be added, and how many spots can't be supported (in orange).

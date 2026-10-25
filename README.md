@@ -32,7 +32,7 @@ The mod tries the **largest** available support size first (TriplePlatform → D
 
 ## Requirements
 
-- **Timberborn** 1.0.13.1 or later
+- **Timberborn** 1.1.2.8 or later (built and tested against 1.1.2.8-ffc2de0-sm)
 - **Harmony** mod (listed as a required dependency)
 
 ## Installation

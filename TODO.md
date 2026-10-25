@@ -4,10 +4,11 @@ Tick items off as they are verified **in-game** (not just written).
 
 ## 1. Verify in-game (highest priority)
 
-1.1.0 builds; nothing has been played in-game yet.
+Target game version: Timberborn 1.1.2.8 (`1.1.2.8-ffc2de0-sm`). 1.2.0 builds against it; nothing has been played in-game yet.
 
 - [x] `dotnet build` succeeds (1.1.0, after adding the `Timberborn.Common` reference)
-- [ ] `dotnet build` succeeds for 1.2.0 (new `Timberborn.Localization` reference)
+- [x] `dotnet build` succeeds for 1.2.0 (new `Timberborn.Localization` reference)
+- [ ] Mod loads in Timberborn 1.1.2.8 without Harmony errors in `Player.log`
 - [ ] Game still loads with the new `Localizations/` folder; labels show in English and French
 - [ ] Summary line under the buttons shows "+N supports" while dragging and the orange "can't be supported" part when some spots have no full column
 - [ ] `dotnet test src/tests/PlatformAutofill.Tests` passes
