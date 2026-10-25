@@ -7,25 +7,32 @@ using Timberborn.BlockObjectTools;
 using Timberborn.BlockSystem;
 using Timberborn.BuildingTools;
 using Timberborn.Coordinates;
+using Timberborn.EntitySystem;
 
 namespace PlatformAutofill
 {
     // Both DefaultBlockObjectPlacer and BuildingPlacer can be called for the same
     // placement. We patch both so we never miss a block, and rely on the service's
     // per-component dedup guard to ignore the second call for the same object.
-    // Supports are queued from the placed callback and built on the next tick,
-    // to avoid conflicting with Timberborn's active drag/preview state.
+    // Since Timberborn 1.1 the placers no longer take a placed callback: they
+    // create the entity synchronously through BlockObjectFactory, so we capture
+    // the created BlockObject while Place runs and report it once it returns.
+    // Supports are queued from here and built on the next tick, to avoid
+    // conflicting with Timberborn's active drag/preview state.
 
     [HarmonyPatch(typeof(DefaultBlockObjectPlacer), nameof(DefaultBlockObjectPlacer.Place))]
     public static class DefaultBlockObjectPlacerPatch
     {
         [HarmonyPrefix]
-        public static void Prefix(
-            BlockObjectSpec template,
-            Placement placement,
-            ref Action<BaseComponent> placedCallback)
+        public static void Prefix()
         {
-            PatchHelper.Wrap(template, placement, ref placedCallback);
+            PlacedObjectCapture.Begin();
+        }
+
+        [HarmonyFinalizer]
+        public static void Finalizer(EntitySetup.Builder entitySetupBuilder, Placement placement, Exception? __exception)
+        {
+            PatchHelper.OnPlaced(entitySetupBuilder, placement, PlacedObjectCapture.End(), __exception);
         }
     }
 
@@ -33,12 +40,27 @@ namespace PlatformAutofill
     public static class BuildingPlacerPatch
     {
         [HarmonyPrefix]
-        public static void Prefix(
-            BlockObjectSpec template,
-            Placement placement,
-            ref Action<BaseComponent> placedCallback)
+        public static void Prefix()
         {
-            PatchHelper.Wrap(template, placement, ref placedCallback);
+            PlacedObjectCapture.Begin();
+        }
+
+        [HarmonyFinalizer]
+        public static void Finalizer(EntitySetup.Builder entitySetupBuilder, Placement placement, Exception? __exception)
+        {
+            PatchHelper.OnPlaced(entitySetupBuilder, placement, PlacedObjectCapture.End(), __exception);
+        }
+    }
+
+    // BlockObjectFactory.Create is the single private path through which both
+    // CreateFinished and CreateUnfinished instantiate a block object.
+    [HarmonyPatch(typeof(BlockObjectFactory), "Create")]
+    public static class BlockObjectFactoryCreatePatch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BlockObject __result)
+        {
+            PlacedObjectCapture.Record(__result);
         }
     }
 
@@ -169,23 +191,58 @@ namespace PlatformAutofill
             }
         }
 
-        internal static void Wrap(
-            BlockObjectSpec template,
+        internal static void OnPlaced(
+            EntitySetup.Builder entitySetupBuilder,
             Placement placement,
-            ref Action<BaseComponent> placedCallback)
+            BlockObject? placed,
+            Exception? exception)
         {
+            if (exception != null || placed == null) return;
             var service = PlatformAutofillService.Instance;
             if (service == null || service.IsPlacingSupports) return;
-            var original = placedCallback;
-            var capturedPlacement = placement;
-            var capturedTemplate = template;
-            placedCallback = component =>
+            TryRun("placer finalizer", () =>
             {
-                original?.Invoke(component);
-                TryRun(
-                    "placedCallback",
-                    () => service.OnBlockPlaced(component, capturedPlacement, capturedTemplate));
-            };
+                BlockObjectSpec? template = entitySetupBuilder.Template.GetSpec<BlockObjectSpec>();
+                if (template != null)
+                {
+                    service.OnBlockPlaced(placed, placement, template);
+                }
+            });
+        }
+    }
+
+    // Records the BlockObject created while a placer call is in progress.
+    // Begin/End nest, so the service can wrap its own placer call around the
+    // patched one and still read the captured object.
+    internal static class PlacedObjectCapture
+    {
+        private static int _depth;
+        private static BlockObject? _captured;
+
+        internal static void Begin()
+        {
+            if (_depth++ == 0)
+            {
+                _captured = null;
+            }
+        }
+
+        internal static void Record(BlockObject? blockObject)
+        {
+            if (_depth > 0 && _captured == null)
+            {
+                _captured = blockObject;
+            }
+        }
+
+        internal static BlockObject? End()
+        {
+            BlockObject? captured = _captured;
+            if (_depth > 0 && --_depth == 0)
+            {
+                _captured = null;
+            }
+            return captured;
         }
     }
 }

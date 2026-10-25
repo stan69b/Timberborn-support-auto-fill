@@ -9,6 +9,7 @@ using Timberborn.BlockObjectTools;
 using Timberborn.BlockSystem;
 using Timberborn.BlueprintSystem;
 using Timberborn.Coordinates;
+using Timberborn.EntitySystem;
 using Timberborn.FactionSystem;
 using Timberborn.GameFactionSystem;
 using Timberborn.Buildings;
@@ -26,10 +27,6 @@ namespace PlatformAutofill
         private static readonly bool DiagnosticLogging = false;
         private const string EnabledPrefKey = "PlatformAutofill.Enabled";
         private const string MaxSupportPrefKey = "PlatformAutofill.MaxSupportIndex";
-        private static readonly MethodInfo? AddAccessesAboveGroundMethod =
-            typeof(HighBlockObjectAccessesAdder).GetMethod(
-                "AddAccessesAboveGround",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         private static readonly MethodInfo? UpdateBoundsMethod =
             typeof(BlockObjectAccessible).GetMethod(
                 "UpdateBounds",
@@ -196,10 +193,19 @@ namespace PlatformAutofill
                     try
                     {
                         IBlockObjectPlacer supportPlacer = _placerService.GetMatchingPlacer(pendingSupport.SupportSpec);
-                        supportPlacer.Place(
-                            pendingSupport.SupportSpec,
-                            pendingSupport.Placement,
-                            component => OnSupportPlaced(component, pendingSupport));
+                        BlockObject? placedSupport;
+                        PlacedObjectCapture.Begin();
+                        try
+                        {
+                            supportPlacer.Place(
+                                new EntitySetup.Builder(pendingSupport.SupportSpec.Blueprint),
+                                pendingSupport.Placement);
+                        }
+                        finally
+                        {
+                            placedSupport = PlacedObjectCapture.End();
+                        }
+                        OnSupportPlaced(placedSupport, pendingSupport);
                         LogDiagnostic($"support '{pendingSupport.SupportName}' placed at {pendingSupport.Placement.Coordinates}");
                     }
                     catch (System.Exception ex)
@@ -502,7 +508,7 @@ namespace PlatformAutofill
         }
 
         // -----------------------------------------------------------------------
-        // Called from the Harmony-wrapped placedCallback.
+        // Called from the Harmony placer patches once a block is created.
         // -----------------------------------------------------------------------
 
         public void OnBlockPlaced(BaseComponent component, Placement placement, BlockObjectSpec blockSpec)
@@ -966,12 +972,12 @@ namespace PlatformAutofill
                 : pendingSupport.Placement.Coordinates.z;
         }
 
-        private void OnSupportPlaced(BaseComponent component, PendingSupportPlacement pendingSupport)
+        private void OnSupportPlaced(BlockObject? blockObject, PendingSupportPlacement pendingSupport)
         {
-            if (!TryGetBlockObject(component, out BlockObject? blockObject) || blockObject == null)
+            if (blockObject == null)
             {
                 LogDiagnostic(
-                    $"support '{pendingSupport.SupportName}' callback did not yield a BlockObject at {pendingSupport.Placement.Coordinates}");
+                    $"support '{pendingSupport.SupportName}' placement did not yield a BlockObject at {pendingSupport.Placement.Coordinates}");
                 return;
             }
 
@@ -983,7 +989,7 @@ namespace PlatformAutofill
             try
             {
                 HighBlockObjectAccessesAdder? accessesAdder = blockObject.GetComponent<HighBlockObjectAccessesAdder>();
-                AddAccessesAboveGroundMethod?.Invoke(accessesAdder, Array.Empty<object>());
+                accessesAdder?.InitializeEntity();
 
                 BlockObjectAccessible? blockObjectAccessible = blockObject.GetComponent<BlockObjectAccessible>();
                 UpdateBoundsMethod?.Invoke(blockObjectAccessible, Array.Empty<object>());

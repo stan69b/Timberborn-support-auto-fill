@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-10-25
+
+- Fixed the build and the placement hooks for Timberborn 1.1: the game's placers now take an `EntitySetup.Builder` and no longer have a placed callback. The mod now captures the object the game creates during placement instead.
+- Fixed support access refresh: `HighBlockObjectAccessesAdder.AddAccessesAboveGround` was renamed to `InitializeEntity` in 1.1, so the refresh step was being skipped silently.
+
 ## [1.2.1] - 2026-10-25
 
 - Targets Timberborn 1.1.2 (`1.1.2.8-ffc2de0-sm`). `MinimumGameVersion` raised from `1.0.13.1` to `1.1.2.8`: the mod is now compiled against the 1.1 game files (Unity 6), so 1.0 is no longer supported.
